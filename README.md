@@ -1,8 +1,6 @@
 # RentFlow
 
-A property management SaaS for Kenyan landlords: portfolio, leases, M-Pesa rent collection, utility billing, expenses and maintenance in one dashboard, plus a lightweight tenant portal.
-
-**The source code for RentFlow is private.** This page exists so the work can be reviewed without access to the repository — what was built, what it runs on, and which decisions are worth talking about.
+Rental management software for Kenyan landlords and their tenants.
 
 **Live:** https://rentflow.zidi.digital
 
@@ -10,46 +8,111 @@ A property management SaaS for Kenyan landlords: portfolio, leases, M-Pesa rent 
 
 ## The problem
 
-Kenyan landlords run their portfolios across notebooks, spreadsheets and M-Pesa SMS. Rent arrives on a mobile money rail that no generic property tool speaks to, utility bills are meter-read and hand-calculated, and chasing tenants is manual. RentFlow puts collection, billing and tenant communication in one place, and pushes routine work (payments, maintenance reports) onto a tenant portal so the landlord isn't the middleman.
+Most small and mid-sized landlords in Kenya run their portfolio out of a notebook, a spreadsheet and a phone. Rent arrives as scattered M-Pesa messages that have to be matched to tenants by hand. Water readings are written down and re-typed into invoices. Nobody is sure which leases expire this quarter, which tenants are behind, or what a property actually cost to run last year. Tenants, for their part, have no record of what they have paid and no reliable way to report a broken pipe.
+
+RentFlow puts all of it in one place: who lives where, what they owe, what they paid, what broke, and what it cost.
 
 ---
 
-## What it does
+## What a landlord can do
 
-**Landlord side**
-- Properties, units and leases — creating a lease provisions the tenant account, emails credentials, and auto-generates the monthly rent payment schedule for the full term.
-- Payments — list, filters, summary of collected/outstanding/overdue, manual mark-paid, one-off reminders, printable rent invoices. Pending payments past due date are auto-flagged `LATE`.
-- Utility billing — meter readings in, total calculated, printable invoice; email to tenant on the paid tier.
-- Expense tracking by property and category.
-- Maintenance queue with status/priority filters and a written response visible to the tenant.
-- Dashboard — occupancy, revenue with month-over-month trend, 6-month expected-vs-collected chart, lease renewal alerts at 60/14 days, and a monthly admin checklist that resets each month.
+**See the portfolio at a glance**
+- Dashboard with total properties, occupancy rate, this month's revenue and how it compares to last month, overdue payments, open maintenance requests and this month's expenses
+- Six-month chart of expected versus collected rent, with a collection rate
+- Alerts for every active lease expiring in the next 60 days, flagged more urgently inside 14 days
+- A monthly admin checklist that resets each month: leases running, utility bills issued, expenses recorded, no rent overdue
+- A short setup checklist when starting out, which disappears once the first lease is created
 
-**Tenant side**
-- Pay rent by M-Pesa STK Push from the payment row; the app polls until confirmation and marks it paid.
-- View lease, payment history, and utility bills with printable invoices.
-- Submit and track maintenance requests.
+**Properties and units**
+- Add properties with name, address, city and type
+- Add units with unit number, type (studio through four-bed, penthouse, commercial), rent and deposit
+- Mark units vacant, occupied or under maintenance
+- Deletion is blocked while a property still has active leases, so records stay intact
 
-**Cross-cutting**
-- Role-based routing and a session guard on all app routes.
-- In-app notifications (lease, payment, maintenance events) with an unread badge.
-- Transactional email: tenant welcome, lease agreement, password reset, payment reminders; a daily cron sends automated reminders for paid-tier landlords.
+**Leases**
+- Create a lease against a unit and a tenant, with start and end dates, rent and deposit
+- The tenant is invited automatically and emailed their sign-in details and a copy of the lease
+- The full schedule of monthly rent payments is created with the lease
+- One lease page showing status, term, both parties' contact details, the payment schedule and maintenance history
+- Terminate a lease and the unit returns to vacant
+
+**Rent collection**
+- Every payment listed with tenant, property and unit, due date, paid date and status
+- Filter by pending, paid, late, partial or waived
+- Running totals for collected, outstanding and overdue
+- Tenants can pay with M-Pesa; confirmed payments are marked paid without manual entry
+- Record cash or bank payments by hand, with notes and a date override
+- Send a payment reminder to a tenant in one click
+- Printable rent invoice for any payment
+- Payments still pending past their due date are flagged late automatically
+
+**Utility billing**
+- Create a water or utility bill from previous and current meter readings, a rate per unit of consumption and an optional fixed charge; the total is worked out for you
+- List of all bills by unit and month with consumption, total and status
+- Mark bills paid
+- Print a clean invoice, or email the bill straight to the tenant
+
+**Expenses**
+- Log spending against a property: repairs, maintenance, service charge, insurance, management fees, utilities and other
+- Filter to a single property to see what it really costs
+- This-month and all-time totals, carried through to the dashboard
+
+**Maintenance**
+- Every tenant request in one list, filterable by status and priority
+- Open a request to see the full description and tenant details
+- Move it through in progress, resolved and closed, and write a response the tenant can read
+
+**Account and notifications**
+- Notifications for new leases, expiring leases, rent due, payments received and maintenance activity, with an unread count
+- Edit your name and phone number, change your password, reset it by email if you forget it
+- Dark mode, and a layout that works on a phone
 
 ---
 
-## Stack
+## What a tenant can do
 
-TypeScript on Bun. Next.js (App Router) with tRPC and TanStack Query, Prisma against PostgreSQL on Neon, Better Auth for sessions, Zod + React Hook Form for validation, HeroUI + TailwindCSS with Recharts and Framer Motion. Safaricom M-Pesa Daraja for payments, Resend for email, UploadThing for files, Biome for linting. Deployed on Vercel with Vercel Cron.
-
----
-
-## Engineering decisions worth defending
-
-**1. One M-Pesa callback, two payment meanings.** Rent and subscription upgrades both go out as STK Push and both come back to the same webhook. The callback disambiguates them by `checkoutRequestId`, then either marks the rent payment `PAID` or activates the PRO plan. Phone numbers arrive as `07XX`, `7XX` or `2547XX` and are normalised to `2547XX` before the push — one format at the boundary rather than defensive parsing scattered through the code. Daraja credentials are optional: if they're absent, the payment features degrade gracefully instead of breaking the app.
-
-**2. Feature gating drawn along infrastructure cost lines, not marketing lines.** The paid tier gates exactly the things that consume metered third-party quotas — automated cron email reminders and utility-bill emails (Resend), document uploads (storage). Everything a landlord needs to actually run a property stays free: full dashboard, leases, M-Pesa collection, expenses, maintenance, and *printable* utility invoices, which cost nothing to produce. Manual, landlord-triggered reminders are free; automated ones are not, because volume is the cost driver. Database and bandwidth aren't gated because the free tiers there aren't the binding constraint at current scale.
-
-**3. Serverless Postgres has sharp edges, so connection paths are split.** Runtime queries use the pooled Neon connection; schema changes run against the direct one. Running Prisma migrations through the pooler times out on an advisory lock, so that path is deliberately avoided rather than worked around at deploy time. The Prisma/Postgres and native crypto packages are also declared as server-external so they resolve correctly in Vercel's bundling — a small config decision that is the difference between the app running and not.
+- See lease status and end date, the next payment due with a countdown, and open maintenance requests
+- View the lease in full: property, unit, monthly rent, deposit, term and landlord contact
+- Pay rent with M-Pesa from the payment row and get an immediate confirmation
+- Review personal payment history and print a receipt or invoice
+- See every utility bill issued to their unit and print it
+- Submit a maintenance request with a title, description, category and priority, then track its status and read the landlord's reply
 
 ---
 
-**Live:** https://rentflow.zidi.digital · Source private; happy to walk through the code in an interview.
+## Plans
+
+| | Starter (free) | Pro (KES 2,499/mo) | Enterprise |
+|---|---|---|---|
+| Properties | Up to 5 | Unlimited | Unlimited |
+| Units and leases | Unlimited | Unlimited | Unlimited |
+| Dashboard, leases, tenants | ✓ | ✓ | ✓ |
+| Rent collection by M-Pesa | ✓ | ✓ | ✓ |
+| Manual payment recording | ✓ | ✓ | ✓ |
+| Maintenance requests | ✓ | ✓ | ✓ |
+| Utility bills and printable invoices | ✓ | ✓ | ✓ |
+| Expense tracking | ✓ | ✓ | ✓ |
+| Lease expiry alerts and monthly checklist | ✓ | ✓ | ✓ |
+| One-off payment reminders | ✓ | ✓ | ✓ |
+| Automatic daily payment reminders | — | ✓ | ✓ |
+| Email utility bills to tenants | — | ✓ | ✓ |
+| Document uploads | — | ✓ | ✓ |
+| Priority support | — | — | ✓ |
+
+Upgrade to Pro with M-Pesa from inside the app. Cancel at any time and the account returns to Starter.
+
+---
+
+## Privacy
+
+RentFlow is built to operate under the Kenya Data Protection Act 2019. Terms of Service and Privacy Policy are published in the product.
+
+---
+
+## Who built it
+
+Designed and built end to end by one engineer — product, interface, and everything behind it.
+
+## Source
+
+The source code is private. RentFlow is a commercial product. Implementation detail can be walked through on request in an interview.
